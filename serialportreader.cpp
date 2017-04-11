@@ -40,11 +40,33 @@
 QT_USE_NAMESPACE
 
 //индексы входа и выхода GPGLL
-int g1=0;
-int g2=0;
+int g1 = 0;
+int g2 = 0;
 
 QByteArray line_GPGLL;
 QByteArray line_GPRMC;
+
+
+//идекс позиции в массиве m_readData
+int i = 0;
+
+//Широта
+double latitude = 0;
+//Полушарие з/в
+QString latitude_sphere;
+
+//Долгота
+double longitude = 0;
+//Полушарие с/в
+QString longitude_sphere;
+
+//Местное время
+double local_time;
+
+//Одна строка из пакета
+QByteArray line;
+//Вожидании доллора
+bool flg = false;
 
 SerialPortReader::SerialPortReader(QSerialPort *serialPort, QObject *parent)
     : QObject(parent)
@@ -77,6 +99,40 @@ void SerialPortReader::handleTimeout()
     }
     else {
 
+        while (i < m_readData.length() ){
+            if (m_readData[i] == '$'){
+                flg = true;
+            }
+            //заполняем строку от $ до \n
+            else if (m_readData[i] == '\n'){
+                parser(line);
+
+                //m_standardOutput << m_readData << endl;
+                /*
+                m_standardOutput << "time = " << local_time << endl;
+                m_standardOutput << "latitude = " << latitude << endl;
+                m_standardOutput << "latitude_sphere = " << latitude_sphere << endl;
+                m_standardOutput << "longitude = " << longitude << endl;
+                m_standardOutput << "longitude_sphere = " << longitude_sphere << endl;
+                */
+                flg = false;
+                line.clear();
+            }
+
+            else if(flg){
+                line = line.append(m_readData[i]);
+            }
+
+            i++;
+        }
+
+
+        m_standardOutput << "time = " << local_time << endl;
+        m_standardOutput << "latitude = " << latitude << " " << latitude_sphere << endl;
+        m_standardOutput << "longitude = " << longitude << " " << longitude_sphere << endl << endl;
+
+
+/*
         QByteArray y("$GPGLL");
         g1 = m_readData.indexOf(y);
         QByteArray z("$GPTXT");
@@ -106,17 +162,14 @@ void SerialPortReader::handleTimeout()
         QList<QString> longitude = test.value(3).split('.');
         double lon=longitude.value(0).toDouble()*0.01;
         m_standardOutput << "Latitude: " << lat << " Longitude: " << lon << endl;
-
-
+*/
 
         //очищаем порт
         m_readData.clear();
-        line_GPGLL.clear();
-        line_GPRMC.clear();
+        i = 0;
 
-
-
-
+        //line_GPGLL.clear();
+        //line_GPRMC.clear();
         //m_standardOutput << QObject::tr("Data successfully received from port %1").arg(m_serialPort->portName()) << endl;
         //m_standardOutput << m_readData << endl;
     }
@@ -130,6 +183,28 @@ void SerialPortReader::handleError(QSerialPort::SerialPortError serialPortError)
     }
 }
 
-//void Parser(void Line){
-//
-//}
+int parser(QString line){
+    QList<QString> test = line.split(',');
+    QString msg_type = test.value(0);
+
+    //Универсальная дичь
+    QList<QString> buf;
+
+    if (msg_type == "GPGGA"){
+        buf = test.value(1).split('.');
+        local_time = buf.value(0).toDouble();
+        buf.clear();
+
+        buf = test.value(2).split('.');
+        latitude = buf.value(0).toDouble()*0.01;
+
+        latitude_sphere = test.value(3);
+
+        buf = test.value(4).split('.');
+        longitude = buf.value(0).toDouble()*0.01;
+
+        latitude_sphere = test.value(5);
+    }
+
+    return 0;
+}
