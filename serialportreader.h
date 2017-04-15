@@ -47,13 +47,8 @@ QT_BEGIN_NAMESPACE
 
 QT_END_NAMESPACE
 
-
-
-
-
+int checkup(QByteArray);
 int parser(QString);
-
-
 
 class SerialPortReader : public QObject
 {

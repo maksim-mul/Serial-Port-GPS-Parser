@@ -44,6 +44,7 @@ QT_USE_NAMESPACE
 
 int main(int argc, char *argv[])
 {
+
     QCoreApplication coreApplication(argc, argv);
     QTextStream standardOutput(stdout);
 

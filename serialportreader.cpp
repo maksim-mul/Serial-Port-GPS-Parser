@@ -39,16 +39,13 @@
 
 QT_USE_NAMESPACE
 
-//индексы входа и выхода GPGLL
-int g1 = 0;
-int g2 = 0;
-
-QByteArray line_GPGLL;
-QByteArray line_GPRMC;
-
-
 //идекс позиции в массиве m_readData
 int i = 0;
+
+//Одна строка из пакета
+QByteArray line;
+//В ожидании доллора
+bool flg = false;
 
 //Широта
 double latitude = 0;
@@ -61,12 +58,18 @@ double longitude = 0;
 QString longitude_sphere;
 
 //Местное время
-double local_time;
+QTime local_time;
+//Время по Гринвичу
+QTime world_time;
 
-//Одна строка из пакета
-QByteArray line;
-//Вожидании доллора
-bool flg = false;
+//Горизонтальная скорость в км/ч
+double speed;
+
+//число спутников
+int satellites_count;
+
+
+
 
 SerialPortReader::SerialPortReader(QSerialPort *serialPort, QObject *parent)
     : QObject(parent)
@@ -98,80 +101,37 @@ void SerialPortReader::handleTimeout()
         m_standardOutput << QObject::tr("No data was currently available for reading from port %1").arg(m_serialPort->portName()) << endl;
     }
     else {
-
         while (i < m_readData.length() ){
+            //нашли начало строки
             if (m_readData[i] == '$'){
                 flg = true;
             }
-            //заполняем строку от $ до \n
+            //нашли конец строки
             else if (m_readData[i] == '\n'){
-                parser(line);
-
-                //m_standardOutput << m_readData << endl;
-                /*
-                m_standardOutput << "time = " << local_time << endl;
-                m_standardOutput << "latitude = " << latitude << endl;
-                m_standardOutput << "latitude_sphere = " << latitude_sphere << endl;
-                m_standardOutput << "longitude = " << longitude << endl;
-                m_standardOutput << "longitude_sphere = " << longitude_sphere << endl;
-                */
+                //проверяем сообщение
+                checkup(line);
                 flg = false;
                 line.clear();
             }
-
+            //заполняем строку от $ до \n
             else if(flg){
                 line = line.append(m_readData[i]);
             }
-
             i++;
         }
 
 
-        m_standardOutput << "time = " << local_time << endl;
-        m_standardOutput << "latitude = " << latitude << " " << latitude_sphere << endl;
-        m_standardOutput << "longitude = " << longitude << " " << longitude_sphere << endl << endl;
+        m_standardOutput << "world_time: " << world_time.toString() << endl;
+        m_standardOutput << "latitude: " << latitude << " " << latitude_sphere << endl;
+        m_standardOutput << "longitude: " << longitude << " " << longitude_sphere << endl;
+        m_standardOutput << "speed: " << speed << endl;
+        m_standardOutput << "satellites_count: " << satellites_count << endl << endl;
 
-
-/*
-        QByteArray y("$GPGLL");
-        g1 = m_readData.indexOf(y);
-        QByteArray z("$GPTXT");
-        g2 = m_readData.indexOf(z);
-        for (int i = g1; i < g2; ++i) {
-            line_GPGLL = line_GPGLL.append(m_readData[i]);
-        }
-        m_standardOutput << line_GPGLL << endl;
-
-        QByteArray t("$GPRMC");
-        g1 = m_readData.indexOf(t);
-        QByteArray v("$GPVTG");
-        g2 = m_readData.indexOf(v);
-        for (int i = g1; i < g2; ++i) {
-            line_GPRMC = line_GPRMC.append(m_readData[i]);
-        }
-        m_standardOutput << line_GPRMC << endl;
-
-
-
-        QString str_GPGLL=line_GPGLL;
-        QList<QString> test = str_GPGLL.split(',');
-
-        QList<QString> latitude = test.value(1).split('.');
-        double lat=latitude.value(0).toDouble()*0.01;
-
-        QList<QString> longitude = test.value(3).split('.');
-        double lon=longitude.value(0).toDouble()*0.01;
-        m_standardOutput << "Latitude: " << lat << " Longitude: " << lon << endl;
-*/
 
         //очищаем порт
         m_readData.clear();
+        //очищаем переменную для цикла while
         i = 0;
-
-        //line_GPGLL.clear();
-        //line_GPRMC.clear();
-        //m_standardOutput << QObject::tr("Data successfully received from port %1").arg(m_serialPort->portName()) << endl;
-        //m_standardOutput << m_readData << endl;
     }
 }
 
@@ -183,28 +143,72 @@ void SerialPortReader::handleError(QSerialPort::SerialPortError serialPortError)
     }
 }
 
+
+qint8 xhor;
+QString xhor_row;
+
+//проверка строки на достоверность
+int checkup(QByteArray line){
+
+    //Узнаем xhor
+    xhor = line[0];
+    for (int g = 1; g < line.length()-4; g++){
+        xhor ^= line[g];
+    }
+
+    //Узнаем контрольную сумму
+    if (line.length() > 5){
+        xhor_row = line[line.length()-3];
+        xhor_row=  xhor_row + line[line.length()-2];
+    }
+
+    //для проверки
+    /*
+    qInfo() << "XOR  = " << xhor << endl;
+    qInfo() << "XOR row = " << xhor_row.toInt(0, 16) << endl;
+    qInfo() << "line = " << line << endl << endl;*/
+
+    //если сообщение пришло без помех
+    if ( xhor == xhor_row.toInt(0, 16) ){
+        parser(line);
+    }
+    else{
+        qInfo() << "Не верное сообщение";
+    }
+    return 0;
+}
+
+//извличение информации из строки
 int parser(QString line){
-    QList<QString> test = line.split(',');
-    QString msg_type = test.value(0);
+    QList<QString> line_part = line.split(',');
+    QString msg_type = line_part.value(0);
 
     //Универсальная дичь
     QList<QString> buf;
 
+    //местное время, широта, долгота, полушария, число спутников
     if (msg_type == "GPGGA"){
-        buf = test.value(1).split('.');
-        local_time = buf.value(0).toDouble();
-        buf.clear();
 
-        buf = test.value(2).split('.');
+        buf = line_part.value(1).split('.');
+        world_time =  QTime::fromString(buf.value(0), "hhmmss");
+
+
+        buf = line_part.value(2).split('.');
         latitude = buf.value(0).toDouble()*0.01;
 
-        latitude_sphere = test.value(3);
+        latitude_sphere = line_part.value(3);
 
-        buf = test.value(4).split('.');
+        buf = line_part.value(4).split('.');
         longitude = buf.value(0).toDouble()*0.01;
 
-        latitude_sphere = test.value(5);
+        longitude_sphere = line_part.value(5);
+
+        satellites_count = line_part.value(7).toInt();
     }
 
+    //узнаем скорость движения объекта
+    if (msg_type == "GPVTG"){
+        speed = line_part.value(7).toDouble();
+    }
     return 0;
 }
